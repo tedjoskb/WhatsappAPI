@@ -16,7 +16,7 @@ class Users(Base):
     role = Column(String)
 
 class Message(Base):
-    __tablename__ = 'message'c
+    __tablename__ = 'message'
 
     id = Column(Integer, primary_key=True,index=True)
     sender_id = Column(Integer, ForeignKey("users.id"))
