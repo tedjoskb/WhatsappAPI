@@ -1,7 +1,8 @@
+import traceback
 from datetime import timedelta, datetime
 from http.client import HTTPException
 from sqlite3 import IntegrityError
-from typing import Annotated
+from typing import Annotated, List
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -11,7 +12,7 @@ from starlette import status
 from starlette.responses import JSONResponse
 
 from database import SessionLocal
-from models import Users
+from models import Users, WhatsAppCredential
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -66,7 +67,10 @@ async def get_current_user(token : Annotated[str, Depends(oauth2_bearer)]):
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="couldn't validate user")
 
-
+# supaya bisa handle payload dengan array data
+class Credential(BaseModel):
+    apiToken : str = Field(min_length=3, max_length=255)
+    phone_number: str = Field(min_length=3, max_length=255)
 
 class CreateUserRequest(BaseModel):
     username : str = Field(min_length=3, max_length=255)
@@ -75,7 +79,8 @@ class CreateUserRequest(BaseModel):
     last_name : str  = Field(min_length=3, max_length=255)
     password: str = Field(min_length=3, max_length=255)
     role: str = Field(min_length=3, max_length=255)
-    phone_number: str = Field(min_length=3, max_length=255)
+    credential: List[Credential]
+# end supaya bisa handle payload dengan array data
 
 class Token(BaseModel):
     access_token : str
@@ -97,21 +102,32 @@ async def create_user(db: db_depedency, create_user_request: CreateUserRequest):
             role=create_user_request.role,
             hashed_password=bcrypt_context.hash(create_user_request.password),
             is_active=True,
-            phone_number = create_user_request.phone_number
+            user_phone_number=create_user_request.credential[0].phone_number# Menggunakan nomor telepon dari credential
+
+
         )
-        db.close()
-        db.begin()
+
+        # Tambahkan instance WhatsAppCredential dengan benar
+        create_credential_whatsapp = WhatsAppCredential(
+            api_token=create_user_request.credential[0].apiToken,
+            phone_number=create_user_request.credential[0].phone_number
+        )
+
         db.add(create_user_model)
+        db.flush()
+        db.add(create_credential_whatsapp)
         db.commit()
         success_message = {"message": "User created successfully"}
         return JSONResponse(content=success_message, status_code=status.HTTP_201_CREATED)
     except IntegrityError as e:
         db.rollback()
         error_message = {"message": "Failed to create user. Integrity Error: Username or Email already exists"}
+        # error_message["traceback"] = traceback.format_exc()
         return JSONResponse(content=error_message, status_code=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         db.rollback()
         error_message = {"message": f"Failed to create user. Error: {str(e)}"}
+        # error_message["traceback"] = traceback.format_exc()
         return JSONResponse(content=error_message, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
